@@ -2,9 +2,9 @@
 
 from binascii import unhexlify
 
-from django.core.urlresolvers import reverse
 from django.test import TestCase
 from django.test.utils import modify_settings, override_settings
+from django.urls import reverse
 from django_otp import DEVICE_ID_SESSION_KEY
 from django_otp.oath import totp
 
@@ -228,3 +228,10 @@ class SetupTest(UserMixin, TestCase):
         with self.settings(TWO_FACTOR_SMS_GATEWAY='two_factor.gateways.fake.Fake'):
             response = self.client.get(reverse('two_factor:setup_complete'))
             self.assertContains(response, 'Add Phone Number')
+
+    def test_missing_management_data(self):
+        # missing management data
+        response = self._post({'validation-token': '666'})
+
+        # view should return HTTP 400 Bad Request
+        self.assertEqual(response.status_code, 400)

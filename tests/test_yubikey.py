@@ -7,9 +7,9 @@ import unittest
 
 from django import forms
 from django.conf import settings
-from django.core.urlresolvers import reverse
 from django.shortcuts import resolve_url
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import six
 
 from .utils import UserMixin
@@ -115,3 +115,12 @@ class YubiKeyTest(UserMixin, TestCase):
                                     data={'wizard_goto_step': 'backup'})
         self.assertNotContains(response, 'YubiKey:')
         self.assertContains(response, 'Token:')
+
+    def test_missing_management_data(self):
+        # missing management data
+        response = self.client.post(reverse('two_factor:login'),
+                                    data={'auth-username': 'bouke@example.com',
+                                          'auth-password': 'secret'})
+
+        # view should return HTTP 400 Bad Request
+        self.assertEqual(response.status_code, 400)

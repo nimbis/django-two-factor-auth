@@ -14,6 +14,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.forms import Form
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, resolve_url
+from django.urls import reverse
 from django.utils.http import is_safe_url
 from django.utils.module_loading import import_string
 from django.views.decorators.cache import never_cache
@@ -35,11 +36,6 @@ from ..forms import (
 from ..models import PhoneDevice, get_available_phone_methods
 from ..utils import backup_phones, default_device, get_otpauth_url
 from .utils import IdempotentSessionWizardView, class_view_decorator
-
-try:
-    from django.urls import reverse
-except ImportError:
-    from django.core.urlresolvers import reverse  # < django 1.10
 
 try:
     from otp_yubikey.models import ValidationService, RemoteYubikeyDevice
@@ -126,6 +122,10 @@ class LoginView(IdempotentSessionWizardView):
         """
         AuthenticationTokenForm requires the user kwarg.
         """
+        if step == 'auth':
+            return {
+                'request': self.request
+            }
         if step in ('token', 'backup'):
             return {
                 'user': self.get_user(),
@@ -271,7 +271,7 @@ class SetupView(IdempotentSessionWizardView):
             try:
                 self.get_device().generate_challenge()
                 kwargs["challenge_succeeded"] = True
-            except:
+            except Exception:
                 logger.exception("Could not generate challenge")
                 kwargs["challenge_succeeded"] = False
         return super(SetupView, self).render_next_step(form, **kwargs)

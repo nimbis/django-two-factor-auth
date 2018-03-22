@@ -6,10 +6,10 @@ except ImportError:
     import mock
 
 from django.conf import settings
-from django.core.urlresolvers import reverse, reverse_lazy
 from django.shortcuts import resolve_url
 from django.test import TestCase
 from django.test.utils import override_settings
+from django.urls import reverse, reverse_lazy
 from django.utils import six
 from django_otp.oath import totp
 from django_otp.util import random_hex
@@ -123,6 +123,14 @@ class PhoneSetupTest(UserMixin, TestCase):
         context = view.get_context_data(None)
         self.assertIn('cancel_url', context)
         self.assertEqual(url, context['cancel_url'])
+
+    def test_missing_management_data(self):
+        # missing management data
+        response = self._post({'setup-number': '123',
+                               'setup-method': 'call'})
+
+        # view should return HTTP 400 Bad Request
+        self.assertEqual(response.status_code, 400)
 
 
 class PhoneDeleteTest(UserMixin, TestCase):

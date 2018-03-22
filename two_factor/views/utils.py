@@ -1,18 +1,11 @@
 import logging
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import SuspiciousOperation
 from django.utils.decorators import method_decorator
 from django.utils.translation import ugettext as _
-
-try:
-    from formtools.wizard.forms import ManagementForm
-    from formtools.wizard.views import SessionWizardView
-    from formtools.wizard.storage.session import SessionStorage
-except ImportError:
-    from django.contrib.formtools.wizard.forms import ManagementForm
-    from django.contrib.formtools.wizard.views import SessionWizardView
-    from django.contrib.formtools.wizard.storage.session import SessionStorage
-
+from formtools.wizard.forms import ManagementForm
+from formtools.wizard.storage.session import SessionStorage
+from formtools.wizard.views import SessionWizardView
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +108,7 @@ class IdempotentSessionWizardView(SessionWizardView):
         # Check if form was refreshed
         management_form = ManagementForm(self.request.POST, prefix=self.prefix)
         if not management_form.is_valid():
-            raise ValidationError(
-                _('ManagementForm data is missing or has been tampered.'),
-                code='missing_management_form',
-            )
+            raise SuspiciousOperation(_('ManagementForm data is missing or has been tampered.'))
 
         form_current_step = management_form.cleaned_data['current_step']
         if (form_current_step != self.steps.current and

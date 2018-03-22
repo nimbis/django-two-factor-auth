@@ -10,7 +10,7 @@ except ImportError:
 
 
 def default_device(user):
-    if not user or user.is_anonymous():
+    if not user or user.is_anonymous:
         return
     for device in devices_for_user(user):
         if device.name == 'default':
@@ -18,7 +18,7 @@ def default_device(user):
 
 
 def backup_phones(user):
-    if not user or user.is_anonymous():
+    if not user or user.is_anonymous:
         return PhoneDevice.objects.none()
     return user.phonedevice_set.filter(name='backup')
 
