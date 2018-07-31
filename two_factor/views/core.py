@@ -298,6 +298,10 @@ class SetupView(IdempotentSessionWizardView):
         elif self.get_method() in ('call', 'sms', 'yubikey', 'cac'):
             device = self.get_device()
             device.save()
+            messages.success(
+                self.request,
+                'Your two-factor authentication device has been successfully '
+                'added to your account.')
 
         else:
             raise NotImplementedError("Unknown method '%s'" % self.get_method())
