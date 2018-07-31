@@ -36,7 +36,6 @@ from ..forms import (
 )
 from ..models import PhoneDevice, get_available_phone_methods, X509Device
 from ..utils import backup_phones, default_device, get_otpauth_url
-from ..settings import TWO_FACTOR_ALLOWED_METHODS
 from .utils import IdempotentSessionWizardView, class_view_decorator
 
 try:
@@ -221,7 +220,15 @@ class SetupView(IdempotentSessionWizardView):
     template_name = 'two_factor/core/setup.html'
     session_key_name = 'django_two_factor-qr_secret_key'
     initial_dict = {}
-    form_list = TWO_FACTOR_ALLOWED_METHODS
+    form_list = (
+        ('method', MethodForm),
+        ('generator', TOTPDeviceForm),
+        ('sms', PhoneNumberForm),
+        ('call', PhoneNumberForm),
+        ('validation', DeviceValidationForm),
+        ('yubikey', YubiKeyDeviceForm),
+        ('cac', X509DeviceForm),
+    )
     condition_dict = {
         'generator': lambda self: self.get_method() == 'generator',
         'call': lambda self: self.get_method() == 'call',

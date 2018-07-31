@@ -13,6 +13,7 @@ from django_otp.util import hex_validator, random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
 from .gateways import make_call, send_sms
+from .settings import TWO_FACTOR_AVAILABLE_METHODS
 
 try:
     import yubiotp
@@ -48,11 +49,7 @@ def get_available_x509_methods():
     return methods
 
 def get_available_methods():
-    methods = [('generator', _('Token generator'))]
-    methods.extend(get_available_phone_methods())
-    methods.extend(get_available_yubikey_methods())
-    methods.extend(get_available_x509_methods())
-    return methods
+    return TWO_FACTOR_AVAILABLE_METHODS
 
 
 def key_validator(*args, **kwargs):

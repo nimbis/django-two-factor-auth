@@ -3,19 +3,13 @@
 from __future__ import absolute_import, unicode_literals
 
 from django.conf import settings
+from django.utils.translation import ugettext_lazy as _
 
-from .forms import (MethodForm, PhoneNumberForm, DeviceValidationForm,
-    TOTPDeviceForm, YubiKeyDeviceForm, X509DeviceForm)
-
-TWO_FACTOR_ALLOWED_METHODS = getattr(
+TWO_FACTOR_AVAILABLE_METHODS = getattr(
     settings,
-    'TWO_FACTOR_ALLOWED_METHODS',
+    'TWO_FACTOR_AVAILABLE_METHODS',
     (
-        ('method', MethodForm),
-        ('generator', TOTPDeviceForm),
-        ('sms', PhoneNumberForm),
-        ('call', PhoneNumberForm),
-        ('validation', DeviceValidationForm),
-        ('yubikey', YubiKeyDeviceForm),
-        ('cac', X509DeviceForm),
+        ('generator', _('Token generator')),
+        ('yubikey', _('YubiKey')),
+        ('cac', _('Common Access Card (CAC)')),
     ))
