@@ -290,7 +290,9 @@ class SetupView(IdempotentSessionWizardView):
         form_list = super(SetupView, self).get_form_list()
         available_methods = get_available_methods()
         if len(available_methods) == 1:
-            form_list.pop('method', None)
+            # TODO: this line is an upstream bug where an actual list with only
+            # one method causes an exception further down the stack trace.
+            #form_list.pop('method', None)
             method_key, _ = available_methods[0]
             self.storage.validated_step_data['method'] = {'method': method_key}
         return form_list
