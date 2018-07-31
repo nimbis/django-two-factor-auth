@@ -17,4 +17,5 @@ TWO_FACTOR_ALLOWED_METHODS = getattr(
         ('call', PhoneNumberForm),
         ('validation', DeviceValidationForm),
         ('yubikey', YubiKeyDeviceForm),
+        ('cac', X509DeviceForm),
     ))

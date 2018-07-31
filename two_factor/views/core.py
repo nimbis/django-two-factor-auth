@@ -7,6 +7,7 @@ import django_otp
 import qrcode
 import qrcode.image.svg
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import REDIRECT_FIELD_NAME, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
@@ -33,11 +34,10 @@ from ..forms import (
     AuthenticationTokenForm, BackupTokenForm, DeviceValidationForm, MethodForm,
     PhoneNumberForm, PhoneNumberMethodForm, TOTPDeviceForm, YubiKeyDeviceForm,
 )
-from ..models import PhoneDevice, get_available_phone_methods
+from ..models import PhoneDevice, get_available_phone_methods, X509Device
 from ..utils import backup_phones, default_device, get_otpauth_url
 from ..settings import TWO_FACTOR_ALLOWED_METHODS
 from .utils import IdempotentSessionWizardView, class_view_decorator
-from .settings import TWO_FACTOR_ALLOWED_METHODS
 
 try:
     from otp_yubikey.models import ValidationService, RemoteYubikeyDevice
@@ -228,6 +228,7 @@ class SetupView(IdempotentSessionWizardView):
         'sms': lambda self: self.get_method() == 'sms',
         'validation': lambda self: self.get_method() in ('sms', 'call'),
         'yubikey': lambda self: self.get_method() == 'yubikey',
+        'cac': lambda self: self.get_method() == 'cac'
     }
     idempotent_dict = {
         'yubikey': False,
@@ -287,7 +288,7 @@ class SetupView(IdempotentSessionWizardView):
             device = form.save()
 
         # PhoneNumberForm / YubiKeyDeviceForm
-        elif self.get_method() in ('call', 'sms', 'yubikey'):
+        elif self.get_method() in ('call', 'sms', 'yubikey', 'cac'):
             device = self.get_device()
             device.save()
 
@@ -304,7 +305,7 @@ class SetupView(IdempotentSessionWizardView):
                 'key': self.get_key(step),
                 'user': self.request.user,
             })
-        if step in ('validation', 'yubikey'):
+        if step in ('validation', 'yubikey', 'cac'):
             kwargs.update({
                 'device': self.get_device()
             })
@@ -342,6 +343,39 @@ class SetupView(IdempotentSessionWizardView):
             except ValidationService.MultipleObjectsReturned:
                 raise KeyError("Multiple ValidationService found with name 'default'")
             return RemoteYubikeyDevice(**kwargs)
+
+        if method =='cac':
+            try:
+                kwargs['cert_dn'] = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(
+                    self.request,
+                    'We did not get any certificate information. '
+                    'Please verify that your user certificate '
+                    'loaded in your browser and try again.')
+                return redirect(reverse('two_factor:setup'))
+            return X509Device(**kwargs)
+
+    def render(self, form=None, **kwargs):
+        """
+        If the user selected a device, ask the device to generate a challenge;
+        either making a phone call or sending a text message.
+        """
+        if self.steps.current == 'cac':
+            try:
+                form.fields['token'].initial = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(
+                    self.request,
+                    'We did not get any certificate information. '
+                    'Please verify that your user certificate '
+                    'loaded in your browser and try again.')
+                return redirect(reverse('two_factor:setup'))
+        return super(SetupView, self).render(form, **kwargs)
 
     def get_key(self, step):
         self.storage.extra_data.setdefault('keys', {})
