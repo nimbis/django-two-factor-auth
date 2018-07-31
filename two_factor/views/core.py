@@ -8,7 +8,7 @@ import qrcode
 import qrcode.image.svg
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import REDIRECT_FIELD_NAME, login
+from django.contrib.auth import REDIRECT_FIELD_NAME, login, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.sites.shortcuts import get_current_site
@@ -33,6 +33,7 @@ from two_factor.utils import totp_digits
 from ..forms import (
     AuthenticationTokenForm, BackupTokenForm, DeviceValidationForm, MethodForm,
     PhoneNumberForm, PhoneNumberMethodForm, TOTPDeviceForm, YubiKeyDeviceForm,
+    X509DeviceForm
 )
 from ..models import PhoneDevice, get_available_phone_methods, X509Device
 from ..utils import backup_phones, default_device, get_otpauth_url
@@ -65,20 +66,27 @@ class LoginView(IdempotentSessionWizardView):
         ('auth', AuthenticationForm),
         ('token', AuthenticationTokenForm),
         ('backup', BackupTokenForm),
+        ('cac', Form),
     )
     idempotent_dict = {
         'token': False,
         'backup': False,
+        'cac': False
     }
 
+    def has_x509_step(self):
+        device = default_device(self.get_user())
+        return device and type(device) == X509Device
+
     def has_token_step(self):
-        return default_device(self.get_user())
+        device = default_device(self.get_user())
+        return device and type(device) != X509Device
 
     def has_backup_step(self):
-        return default_device(self.get_user()) and \
-            'token' not in self.storage.validated_step_data
+        return False
 
     condition_dict = {
+        'cac': has_x509_step,
         'token': has_token_step,
         'backup': has_backup_step,
     }
@@ -161,6 +169,28 @@ class LoginView(IdempotentSessionWizardView):
         """
         if self.steps.current == 'token':
             self.get_device().generate_challenge()
+        if self.steps.current == 'cac':
+            try:
+                dn = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(
+                    self.request,
+                    'We did not get any certificate information for your '
+                    'two-factor CAC login. Please verify that your CAC is '
+                    'inserted into your reader and your user certificate is '
+                    'loaded in your browser.')
+                return redirect(reverse('two_factor:login'))
+            user = authenticate(dn=dn, verified=verified)
+            if user is None:
+                messages.error(
+                    self.request,
+                    'We did not get the correct certificate information for '
+                    'your two-factor CAC login. Please verify that you '
+                    'are using the correct CAC and your user certificate is '
+                    'loaded in your browser.')
+                return redirect(reverse('two_factor:login'))
         return super(LoginView, self).render(form, **kwargs)
 
     def get_user(self):
