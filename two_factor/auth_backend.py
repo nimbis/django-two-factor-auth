@@ -9,7 +9,7 @@ from django.utils.decorators import available_attrs
 from django.core.urlresolvers import reverse
 from django.contrib.auth.views import redirect_to_login
 
-from .models import X509UserMapping
+from .models import X509Device
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,9 @@ class AuthenticationBackend(ModelBackend):
 
     def authenticate(self, **credentials):
         """
-        Try to look up User in X509UserMaps, returning None if not found
+        Ensure that the User attempting to authenticate has an associated
+        X509Device object, and the certificate DN we have stored matches what
+        they have provided.
         """
 
         if 'dn' not in credentials or 'verified' not in credentials:
@@ -28,8 +30,8 @@ class AuthenticationBackend(ModelBackend):
             return None
 
         try:
-            return X509UserMapping.objects.get(cert_dn=credentials['dn']).user
-        except X509UserMapping.DoesNotExist:
+            return X509Device.objects.get(cert_dn=credentials['dn']).user
+        except X509Device.DoesNotExist:
             return None
 
 
@@ -40,12 +42,12 @@ def is_X509_authenticated(request):
     try:
         return request.user.is_authenticated and (
             request.session['_auth_user_backend'] ==
-            'x509_auth.auth_backend.AuthenticationBackend')
+            'two_factor.auth_backend.AuthenticationBackend')
     except KeyError:
         # Odd.. we're authed with out a backend.
-        logger.error("is_X509_authenticated got a user that was logged in but"
-                     " some how did not have '_auth_user_backend' in their"
-                     " session.  Is Django broke?")
+        logger.error("is_X509_authenticated got a user that was logged in but "
+                     "some how did not have '_auth_user_backend' in their "
+                     "session. Is Django broke?")
         return False
 
 
