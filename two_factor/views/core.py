@@ -30,6 +30,8 @@ from two_factor import signals
 from two_factor.models import get_available_methods
 from two_factor.utils import totp_digits
 
+from ..settings import (
+    TWO_FACTOR_NO_CERT_MESSAGE, TWO_FACTOR_WRONG_CERT_MESSAGE)
 from ..forms import (
     AuthenticationTokenForm, BackupTokenForm, DeviceValidationForm, MethodForm,
     PhoneNumberForm, PhoneNumberMethodForm, TOTPDeviceForm, YubiKeyDeviceForm,
@@ -38,6 +40,7 @@ from ..forms import (
 from ..models import PhoneDevice, get_available_phone_methods, X509Device
 from ..utils import backup_phones, default_device, get_otpauth_url
 from .utils import IdempotentSessionWizardView, class_view_decorator
+
 
 try:
     from otp_yubikey.models import ValidationService, RemoteYubikeyDevice
@@ -175,21 +178,11 @@ class LoginView(IdempotentSessionWizardView):
                 verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
             except KeyError:
                 # HTTP headers not set
-                messages.error(
-                    self.request,
-                    'We did not get any certificate information for your '
-                    'two-factor CAC login. Please verify that your CAC is '
-                    'inserted into your reader and your user certificate is '
-                    'loaded in your browser.')
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
                 return redirect(reverse('two_factor:login'))
             user = authenticate(dn=dn, verified=verified)
             if user is None:
-                messages.error(
-                    self.request,
-                    'We did not get the correct certificate information for '
-                    'your two-factor CAC login. Please verify that you '
-                    'are using the correct CAC and your user certificate is '
-                    'loaded in your browser.')
+                messages.error(self.request, TWO_FACTOR_WRONG_CERT_MESSAGE)
                 return redirect(reverse('two_factor:login'))
         return super(LoginView, self).render(form, **kwargs)
 
@@ -393,11 +386,7 @@ class SetupView(IdempotentSessionWizardView):
                 verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
             except KeyError:
                 # HTTP headers not set
-                messages.error(
-                    self.request,
-                    'We did not get any certificate information. '
-                    'Please verify that your user certificate '
-                    'loaded in your browser and try again.')
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
                 return redirect(reverse('two_factor:setup'))
             return X509Device(**kwargs)
 
@@ -412,11 +401,7 @@ class SetupView(IdempotentSessionWizardView):
                 verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
             except KeyError:
                 # HTTP headers not set
-                messages.error(
-                    self.request,
-                    'We did not get any certificate information. '
-                    'Please verify that your user certificate '
-                    'loaded in your browser and try again.')
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
                 return redirect(reverse('two_factor:setup'))
         return super(SetupView, self).render(form, **kwargs)
 
