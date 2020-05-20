@@ -84,6 +84,19 @@ class YubiKeyDeviceForm(DeviceValidationForm):
         return super().clean_token()
 
 
+class X509DeviceForm(DeviceValidationForm):
+    # This field is read-only since it is populated by the server from the
+    # CAC.
+    token = forms.CharField(
+        label=_("Common Access Card (CAC) Distinguished Name"),
+        widget=forms.TextInput(
+            attrs={'readonly':'readonly'}))
+
+    error_messages = {
+        'invalid_token': _("The CAC could not be verified."),
+    }
+
+
 class TOTPDeviceForm(forms.Form):
     token = forms.IntegerField(label=_("Token"), min_value=0, max_value=int('9' * totp_digits()))
 

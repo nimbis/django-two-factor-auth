@@ -5,12 +5,14 @@ from django.conf import settings
 from django.db import models
 from django.utils.encoding import force_str
 from django.utils.translation import gettext_lazy as _
+from django.contrib.auth.models import User
 from django_otp.models import Device
 from django_otp.oath import totp
 from django_otp.util import hex_validator, random_hex
 from phonenumber_field.modelfields import PhoneNumberField
 
 from .gateways import make_call, send_sms
+from .settings import TWO_FACTOR_AVAILABLE_METHODS
 
 try:
     import yubiotp
@@ -41,12 +43,12 @@ def get_available_yubikey_methods():
         methods.append(('yubikey', _('YubiKey')))
     return methods
 
+def get_available_x509_methods():
+    methods = [('cac', _('Common Access Card (CAC)'))]
+    return methods
 
 def get_available_methods():
-    methods = [('generator', _('Token generator'))]
-    methods.extend(get_available_phone_methods())
-    methods.extend(get_available_yubikey_methods())
-    return methods
+    return TWO_FACTOR_AVAILABLE_METHODS
 
 
 def key_validator(*args, **kwargs):
@@ -111,3 +113,29 @@ class PhoneDevice(Device):
             make_call(device=self, token=token)
         else:
             send_sms(device=self, token=token)
+
+
+class X509Device(Device):
+    """ 1:M mapping of Users to certificate (X.509) DNs (subjects) """
+
+    class Meta:
+        app_label = 'two_factor'
+
+    user = models.ForeignKey(
+        User,
+        verbose_name="User",
+        help_text="Django User associated with certificate.",
+        default=None, blank=True, null=True,
+        related_name="%(app_label)s_%(class)s_related",)
+
+    cert_dn = models.CharField(
+        help_text="Certificate matter to match on.",
+        max_length=1024,
+        blank=False,
+        unique=True)
+
+    def verify_token(self, token):
+        return True
+
+    def __str__(self):
+        return "{0}:{1}".format(self.user.username, self.cert_dn)

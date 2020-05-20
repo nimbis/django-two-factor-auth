@@ -6,7 +6,7 @@ import two_factor.models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('two_factor', '0005_auto_20160224_0450'),
+        ('two_factor', '0006_x509device'),
     ]
 
     operations = [

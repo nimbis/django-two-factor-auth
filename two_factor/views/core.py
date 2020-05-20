@@ -7,7 +7,8 @@ import django_otp
 import qrcode
 import qrcode.image.svg
 from django.conf import settings
-from django.contrib.auth import REDIRECT_FIELD_NAME, login
+from django.contrib import messages
+from django.contrib.auth import REDIRECT_FIELD_NAME, login, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.sites.shortcuts import get_current_site
@@ -28,13 +29,17 @@ from two_factor import signals
 from two_factor.models import get_available_methods, random_hex_str
 from two_factor.utils import totp_digits
 
+from ..settings import (
+    TWO_FACTOR_NO_CERT_MESSAGE, TWO_FACTOR_WRONG_CERT_MESSAGE)
 from ..forms import (
     AuthenticationTokenForm, BackupTokenForm, DeviceValidationForm, MethodForm,
     PhoneNumberForm, PhoneNumberMethodForm, TOTPDeviceForm, YubiKeyDeviceForm,
+    X509DeviceForm
 )
-from ..models import PhoneDevice, get_available_phone_methods
+from ..models import PhoneDevice, get_available_phone_methods, X509Device
 from ..utils import backup_phones, default_device, get_otpauth_url
 from .utils import IdempotentSessionWizardView, class_view_decorator
+
 
 try:
     from otp_yubikey.models import ValidationService, RemoteYubikeyDevice
@@ -63,20 +68,27 @@ class LoginView(IdempotentSessionWizardView):
         ('auth', AuthenticationForm),
         ('token', AuthenticationTokenForm),
         ('backup', BackupTokenForm),
+        ('cac', Form),
     )
     idempotent_dict = {
         'token': False,
         'backup': False,
+        'cac': False
     }
 
+    def has_x509_step(self):
+        device = default_device(self.get_user())
+        return device and type(device) == X509Device
+
     def has_token_step(self):
-        return default_device(self.get_user())
+        device = default_device(self.get_user())
+        return device and type(device) != X509Device
 
     def has_backup_step(self):
-        return default_device(self.get_user()) and \
-            'token' not in self.storage.validated_step_data
+        return False
 
     condition_dict = {
+        'cac': has_x509_step,
         'token': has_token_step,
         'backup': has_backup_step,
     }
@@ -160,6 +172,18 @@ class LoginView(IdempotentSessionWizardView):
         """
         if self.steps.current == 'token':
             self.get_device().generate_challenge()
+        if self.steps.current == 'cac':
+            try:
+                dn = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
+                return redirect(reverse('two_factor:login'))
+            user = authenticate(dn=dn, verified=verified)
+            if user is None:
+                messages.error(self.request, TWO_FACTOR_WRONG_CERT_MESSAGE)
+                return redirect(reverse('two_factor:login'))
         return super().render(form, **kwargs)
 
     def get_user(self):
@@ -220,13 +244,13 @@ class SetupView(IdempotentSessionWizardView):
     session_key_name = 'django_two_factor-qr_secret_key'
     initial_dict = {}
     form_list = (
-        ('welcome', Form),
         ('method', MethodForm),
         ('generator', TOTPDeviceForm),
         ('sms', PhoneNumberForm),
         ('call', PhoneNumberForm),
         ('validation', DeviceValidationForm),
         ('yubikey', YubiKeyDeviceForm),
+        ('cac', X509DeviceForm),
     )
     condition_dict = {
         'generator': lambda self: self.get_method() == 'generator',
@@ -234,6 +258,7 @@ class SetupView(IdempotentSessionWizardView):
         'sms': lambda self: self.get_method() == 'sms',
         'validation': lambda self: self.get_method() in ('sms', 'call'),
         'yubikey': lambda self: self.get_method() == 'yubikey',
+        'cac': lambda self: self.get_method() == 'cac'
     }
     idempotent_dict = {
         'yubikey': False,
@@ -258,7 +283,9 @@ class SetupView(IdempotentSessionWizardView):
         form_list = super().get_form_list()
         available_methods = get_available_methods()
         if len(available_methods) == 1:
-            form_list.pop('method', None)
+            # TODO: this line is an upstream bug where an actual list with only
+            # one method causes an exception further down the stack trace.
+            #form_list.pop('method', None)
             method_key, _ = available_methods[0]
             self.storage.validated_step_data['method'] = {'method': method_key}
         return form_list
@@ -293,9 +320,13 @@ class SetupView(IdempotentSessionWizardView):
             device = form.save()
 
         # PhoneNumberForm / YubiKeyDeviceForm
-        elif self.get_method() in ('call', 'sms', 'yubikey'):
+        elif self.get_method() in ('call', 'sms', 'yubikey', 'cac'):
             device = self.get_device()
             device.save()
+            messages.success(
+                self.request,
+                'Your two-factor authentication device has been successfully '
+                'added to your account.')
 
         else:
             raise NotImplementedError("Unknown method '%s'" % self.get_method())
@@ -310,7 +341,7 @@ class SetupView(IdempotentSessionWizardView):
                 'key': self.get_key(step),
                 'user': self.request.user,
             })
-        if step in ('validation', 'yubikey'):
+        if step in ('validation', 'yubikey', 'cac'):
             kwargs.update({
                 'device': self.get_device()
             })
@@ -348,6 +379,31 @@ class SetupView(IdempotentSessionWizardView):
             except ValidationService.MultipleObjectsReturned:
                 raise KeyError("Multiple ValidationService found with name 'default'")
             return RemoteYubikeyDevice(**kwargs)
+
+        if method =='cac':
+            try:
+                kwargs['cert_dn'] = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
+                return redirect(reverse('two_factor:setup'))
+            return X509Device(**kwargs)
+
+    def render(self, form=None, **kwargs):
+        """
+        If the user selected a device, ask the device to generate a challenge;
+        either making a phone call or sending a text message.
+        """
+        if self.steps.current == 'cac':
+            try:
+                form.fields['token'].initial = self.request.META['HTTP_X_SSL_USER_DN']
+                verified = self.request.META['HTTP_X_SSL_AUTHENTICATED']
+            except KeyError:
+                # HTTP headers not set
+                messages.error(self.request, TWO_FACTOR_NO_CERT_MESSAGE)
+                return redirect(reverse('two_factor:setup'))
+        return super(SetupView, self).render(form, **kwargs)
 
     def get_key(self, step):
         self.storage.extra_data.setdefault('keys', {})
