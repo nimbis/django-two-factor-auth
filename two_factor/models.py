@@ -126,7 +126,8 @@ class X509Device(Device):
         verbose_name="User",
         help_text="Django User associated with certificate.",
         default=None, blank=True, null=True,
-        related_name="%(app_label)s_%(class)s_related",)
+        related_name="%(app_label)s_%(class)s_related",
+        on_delete=models.CASCADE)
 
     cert_dn = models.CharField(
         help_text="Certificate matter to match on.",
